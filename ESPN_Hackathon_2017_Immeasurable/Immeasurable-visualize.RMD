@@ -1,0 +1,63 @@
+---
+title: "A View of Big Man 'Care Factor'"
+author: "[Daniel Wolf](daniel.wolf33@gmail.com)"
+date: "March 2nd, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.width=9, fig.height=6,
+                      echo=FALSE, warning=FALSE, message=FALSE)
+
+library(ggplot2)
+library(RColorBrewer)
+
+```
+
+
+
+```{r visualize}
+
+df <- read.csv('playersummary.csv')
+
+# Sort by the key metric for plotting
+df <- transform(df,name_end = reorder(name_end, -mean_bask_diff))
+
+colourCount = length(unique(df$name_end))
+
+ggplot(df, aes(x=name_end,y=mean_bask_diff,color='black',fill=name_end)) +
+  geom_bar(stat='identity') +
+  scale_fill_manual(values = colorRampPalette(brewer.pal(9, "Greens"))(colourCount)) +
+  xlab('Player Name') +
+  ylab('Change in distance to basket during shot attempt (feet)') +
+  ggtitle('How hard are the bigs crashing the boards?') +
+  theme(legend.position='none') + 
+  theme(plot.title = element_text(size=22)) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+
+
+```
+
+#### Approach
+
+* Measured each big man's **change in their distance to the basket** 
+while the ball is in the air during a shot attempt
+* All scenarios where they started between 10 to 20 feet from the basket. 
+There are 1,231 samples across 23 big men for these 5 games.
+* Regardless of whether they actually get the rebound. This metric 
+is based on effort as opposed to skill.
+
+#### Key Takeaways
+
+* On average, Tristan Thompson gets 4 feet closer to the basket while the ball is in the air!
+* DeMarcus Cousins and Roy Hibbert get further from the basket in the same scenarios
+
+#### About
+
+I created this plot during the ESPN Hackathon at the 2017 Sloan Sports Analytics Conference. 
+The Hackathon prompt was to "Measure the Immeasurable", so I attempted to quantify
+how much effort the big men are putting into their rebounding.
+The data source is SportVU player tracking from 5 full NBA games in the 2015-16 season. 
+For R code used to calculate and visualize, you can visit 
+[http://github.com/dwolfATL/Sports-Analytics](http://github.com/dwolfATL/Sports-Analytics).
+

@@ -1,0 +1,120 @@
+---
+title: "Immeasurable: Data Crunching"
+author: "DWolf"
+date: "February 26, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.width=9, fig.height=6,
+                      echo=FALSE, warning=FALSE, message=FALSE)
+
+library(dplyr)
+library(ggplot2)
+library(RColorBrewer)
+
+```
+
+```{r load_data}
+
+df <- read.csv('data.csv')
+#str(df)
+
+# sort
+df <- df[
+  with(df, order(name, game, period, -game.clock)),
+]
+
+#head(df, 50)
+```
+
+```{r shotbeginend}
+
+# Find the line items where the ball goes above 10 feet
+shotbeginidx <- which(df$ballz>=10 & dplyr::lag(df$ballz)<10)
+
+# Find the line items where the ball drops below 10 feet
+shotendidx <- which(df$ballz<10 & dplyr::lag(df$ballz)>=10)
+
+#dim(shotbeginidx)
+#str(shotbeginidx)
+
+shotbegin <- df[shotbeginidx,]
+colnames(shotbegin) <- paste(colnames(shotbegin), "begin", sep = "_")
+shotend <- df[shotendidx,]
+colnames(shotend) <- paste(colnames(shotend), "end", sep = "_")
+
+df.be <- cbind (shotbegin, shotend)
+
+str(df.be)
+
+```
+
+```{r distances}
+
+# Define the distances to the ball and the basket at the start and stop of shot
+df.be$bask_dist_start <- with(df.be, sqrt((playerx_begin-4)^2+(playery_begin-25)^2))
+df.be$bask_dist_end <- with(df.be, sqrt((playerx_end-4)^2+(playery_end-25)^2))
+
+# Recalculate distance if they are at the other end of the court
+df.be$bask_dist_start <- with(df.be,
+                              ifelse(bask_dist_start>46,
+                                     sqrt((playerx_begin-90)^2+(playery_begin-25)^2), 
+                                     bask_dist_start))
+df.be$bask_dist_end <- with(df.be,
+                            ifelse(bask_dist_end>46,
+                                   sqrt((playerx_end-90)^2+(playery_end-25)^2),
+                                   bask_dist_end))
+
+df.be$ball_dist_start <- with(df.be, 
+                              sqrt((playerx_begin-ballx_begin)^2+(playery_begin-bally_begin)^2))
+df.be$ball_dist_end <- with(df.be, 
+                            sqrt((playerx_end-ballx_end)^2+(playery_end-bally_end)^2))
+
+df.be$bask_diff <- df.be$bask_dist_start - df.be$bask_dist_end
+df.be$ball_diff <- df.be$ball_dist_start - df.be$ball_dist_end
+
+```
+
+```{r filter}
+
+# Find the line items where the player starts between 10 and 20 feet from the basket
+# And starts at least 5 feet away from the ball
+rangeidx <- which(df.be$bask_dist_start>=10 & df.be$bask_dist_start<=20 & df.be$ball_dist_start>=5)
+
+df.berange <- df.be[rangeidx,]
+
+df.berange$playerx_begin <- with(df.berange, 
+                                 ifelse(playerx_begin>46,
+                                        94-playerx_begin,
+                                        playerx_begin))
+df.berange$playerx_end <- with(df.berange, 
+                               ifelse(playerx_end>46,
+                                      94-playerx_end,
+                                      playerx_end))
+
+```
+
+```{r summarize}
+
+# Find the averages across several key measurements
+player.groups <- group_by(df.berange, name_end)
+diffByPlayer <- summarize(player.groups, mean_bask_diff = mean(bask_diff),
+                               playerx_begin = mean(playerx_begin),
+                               playery_begin = mean(playery_begin),
+                               playerx_end = mean(playerx_end),
+                               playery_end = mean(playery_end),
+                               mean_bask_dist_st = mean(bask_dist_start),
+                               mean_bask_dist_end = mean(bask_dist_end),
+                               median_bask_diff = median(bask_diff),
+                               n = n())
+
+# Sort
+diffByPlayer <- diffByPlayer[
+  with(diffByPlayer, order(-mean_bask_diff)),
+]
+
+# Export CSV results for visualization
+write.csv(diffByPlayer, 'playersummary.csv')
+
+```
