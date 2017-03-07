@@ -1,0 +1,325 @@
+---
+title: "Measuring Football Defensive Stretch"
+author: "[Daniel Wolf](daniel.wolf33@gmail.com)"
+date: "March 10, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(fig.width=15, fig.height=10, fig.path='Figs/',
+                      echo=FALSE, warning=FALSE, message=FALSE)
+library(ggplot2)
+library(dplyr)
+
+```
+
+
+```{r load_data}
+
+football.orig <- read.csv('UnderArmor2016.csv')
+
+# Evaluate some basic attributes of the dataset
+#dim(football)
+#names(football)
+#str(football)
+#row.names(football)
+#head(football)
+#summary(football)
+
+football.orig$defense <- ifelse(football.orig$player < 100,0,1)
+
+# New unique identifier fields
+football.orig <- within(football.orig, Play.Frame.D <- paste(play, frame, defense, sep='_'))
+football.orig <- within(football.orig, Play.Frame <- paste(play, frame, sep='_'))
+football.orig <- within(football.orig, Play.D <- paste(play, defense, sep='_'))
+
+football <- football.orig
+
+```
+
+
+```{r centroid}
+
+# Create new columns to identify the centroid for each Play/Frame/Defense
+football.xz.mean.per.frame <- summarize(group_by(football, Play.Frame.D), 
+                                    x.mean.per.frame = mean(x), 
+                                    z.mean.per.frame = mean(z))
+football <- merge(football,football.xz.mean.per.frame)
+
+# Create new columns to identify the average centroid for each Play/Defense
+football.xz.mean.per.play <- summarize(group_by(football, Play.D), 
+                                   x.mean.per.play = mean(x), 
+                                   z.mean.per.play = mean(z))
+football <- merge(football,football.xz.mean.per.play)
+
+
+```
+
+```{r ball_position}
+
+# Create new columns to identify the ball position for each Play/Frame
+football.HasBall <- subset(football, hasball == 1)
+football.HasBall$x.ball.per.frame <- football.HasBall$x
+football.HasBall$z.ball.per.frame <- football.HasBall$z
+football.HasBall <- football.HasBall[,c("Play.Frame", 
+                                        "x.ball.per.frame", 
+                                        "z.ball.per.frame")]
+
+# If there are NAs with 2nd method, then there are frames that do not have a HasBall ticker
+# So you do not know the position of the ball
+# Merge defaults to inner join
+football <- merge(football,football.HasBall)
+#football <- merge(x = football, y = football.HasBall, by = "Play.Frame", all.x = TRUE)
+
+# Create new columns to identify the average ball position for each Play/Defense
+football.xz.ball.per.play <- summarize(group_by(football, Play.D), 
+                                   x.ball.per.play = mean(x.ball.per.frame), 
+                                   z.ball.per.play = mean(z.ball.per.frame))
+football <- merge(football,football.xz.ball.per.play)
+
+
+
+```
+
+
+```{r dda_ddb}
+
+# Calculate each player's distance from average
+football$dda.using.mean.per.frame <- with(football, 
+                           sqrt((x-x.mean.per.frame)^2 + (z-z.mean.per.frame)^2))
+football$dda.using.mean.per.play <- with(football, 
+                          sqrt((x-x.mean.per.play)^2 + (z-z.mean.per.play)^2))
+
+# Calculate each player's distance from the ball
+football$ddb.using.ball.per.frame <- with(football, 
+                     sqrt((x-x.ball.per.frame)^2 + (z-z.ball.per.frame)^2))
+football$ddb.using.ball.per.play <- with(football, 
+                     sqrt((x-x.ball.per.play)^2 + (z-z.ball.per.play)^2))
+
+#----------------------------------------------------------------------------------
+# Group and summarize by Play/Frame/Defense to get dda average per frame
+football.dda.mean.per.frame <- summarize(group_by(football, Play.Frame.D), 
+                                dda.mean.per.frame = mean(dda.using.mean.per.frame))
+football <- merge(football,football.dda.mean.per.frame)
+
+# Group and summarize by Play/Frame/Defense to get ddb average per frame
+football.ddb.mean.per.frame <- summarize(group_by(football, Play.Frame.D), 
+                                ddb.mean.per.frame = mean(ddb.using.ball.per.frame))
+football <- merge(football,football.ddb.mean.per.frame)
+
+#----------------------------------------------------------------------------------
+# Group and summarize by Play/Defense to get dda per play (empiric since using players)
+football.dda.mean.per.play.empiric <- summarize(group_by(football, Play.D), 
+                               dda.mean.per.play.empiric = mean(dda.using.mean.per.play))
+football <- merge(football,football.dda.mean.per.play.empiric)
+
+# Group and summarize by Play/Defense to get ddb per play (empiric since using players)
+football.ddb.mean.per.play.empiric <- summarize(group_by(football, Play.D), 
+                               ddb.mean.per.play.empiric = mean(ddb.using.ball.per.play))
+football <- merge(football,football.ddb.mean.per.play.empiric)
+
+#----------------------------------------------------------------------------------
+
+# Group and summarize by Play/Defense to get dda per play
+# This equals the average of dda.mean.per.frame, so it is an average of the frame averages
+football.dda.mean.per.play.rollup <- summarize(group_by(football, Play.D), 
+                               dda.mean.per.play.rollup = mean(dda.using.mean.per.frame))
+football <- merge(football,football.dda.mean.per.play.rollup)
+
+# Group and summarize by Play/Defense to get ddb per play
+# This equals the average of ddb.mean.per.frame, so it is an average of the frame averages
+football.ddb.mean.per.play.rollup <- summarize(group_by(football, Play.D), 
+                               ddb.mean.per.play.rollup = mean(ddb.using.ball.per.frame))
+football <- merge(football,football.ddb.mean.per.play.rollup)
+
+
+```
+
+
+```{r firstlast_frame_1}
+
+#head(football)
+
+# Create new columns to identify which frames are the first and last frames for each play
+# Switch to ORIGINAL football if causing issues
+football.frames <- summarize(group_by(football, Play.D),
+                             min.frame = min(frame),max.frame = max(frame))
+football <- merge(football,football.frames)
+#write.csv(football.frames, "football_frames.csv")
+
+
+football$first.frame <- ifelse(football$min.frame == football$frame,1,0)
+football$last.frame <- ifelse(football$max.frame == football$frame,1,0)
+football$min.frame <- NULL
+football$max.frame <- NULL
+football.first.defense.frame <- subset(football, first.frame == 1 & defense == 1)
+football.last.defense.frame <- subset(football, last.frame == 1 & defense == 1)
+
+```
+
+```{r firstlast_frame_2}
+football.first.defense.frame <- football.first.defense.frame[,c("play", 
+                                        "dda.mean.per.frame", 
+                                        "ddb.mean.per.frame")]
+
+
+# Rename columns to first and last
+names(football.first.defense.frame)[names(football.first.defense.frame) == 
+                                      'dda.mean.per.frame'] <- 'dda.mean.first.frame'
+names(football.first.defense.frame)[names(football.first.defense.frame) == 
+                                      'ddb.mean.per.frame'] <- 'ddb.mean.first.frame'
+
+
+football.last.defense.frame <- football.last.defense.frame[,c("play", 
+                                        "dda.mean.per.frame", 
+                                        "ddb.mean.per.frame")]
+# Rename columns to first and last
+names(football.last.defense.frame)[names(football.last.defense.frame) == 
+                                      'dda.mean.per.frame'] <- 'dda.mean.last.frame'
+names(football.last.defense.frame)[names(football.last.defense.frame) == 
+                                      'ddb.mean.per.frame'] <- 'ddb.mean.last.frame'
+
+football.firstlast.frame <- merge(football.first.defense.frame,football.last.defense.frame)
+
+# Remove duplicates (should end up with 63 rows for 63 plays)
+football.firstlast.frame <-
+  football.firstlast.frame[!duplicated(football.firstlast.frame), ]
+
+
+
+```
+
+
+```{r streamlined_to_play_defense}
+
+# Streamline to defense only
+football.defense <- subset(football, defense == 1)
+
+# Streamline to play-level fields (remember this is defense only)
+football.by.play <- football.defense[,c("play","team","playtype","fdl",
+                                "los","down",
+                                "dda.mean.per.play.empiric",
+                                "ddb.mean.per.play.empiric",
+                                "dda.mean.per.play.rollup",
+                                "ddb.mean.per.play.rollup")]
+
+# Remove duplicates (should end up with 63 rows for 63 plays)
+football.by.play <- football.by.play[!duplicated(football.by.play), ]
+
+# Bring in dda and ddb for first and last frame
+football.by.play <- merge(football.by.play,football.firstlast.frame)
+
+# Calculate increase in dda and ddb
+football.by.play$dda.increase <- football.by.play$dda.mean.last.frame -
+                                  football.by.play$dda.mean.first.frame
+football.by.play$ddb.increase <- football.by.play$ddb.mean.last.frame -
+                                  football.by.play$ddb.mean.first.frame
+
+
+
+```
+
+
+```{r prep_for_plotting}
+
+football.by.playtype <- summarize(group_by(football.by.play, playtype), 
+                                    mean.start.dda = mean(dda.mean.first.frame), 
+                                    mean.start.ddb = mean(ddb.mean.first.frame),
+                                    mean.finish.dda = mean(dda.mean.last.frame),
+                                    mean.finish.ddb = mean(ddb.mean.last.frame)
+                                  )
+#football.by.playtype
+dda.start <- football.by.playtype[,c("playtype","mean.start.dda")]
+ddb.start <- football.by.playtype[,c("playtype","mean.start.ddb")]
+dda.finish <- football.by.playtype[,c("playtype","mean.finish.dda")]
+ddb.finish <- football.by.playtype[,c("playtype","mean.finish.ddb")]
+
+dda.start$phase <- rep("Start of Play",nrow(dda.start))
+ddb.start$phase <- rep("Start of Play",nrow(ddb.start))
+dda.finish$phase <- rep("End of Play",nrow(dda.finish))
+ddb.finish$phase <- rep("End of Play",nrow(ddb.finish))
+
+dda.start$metric <- rep("dda",nrow(dda.start))
+ddb.start$metric <- rep("ddb",nrow(ddb.start))
+dda.finish$metric <- rep("dda",nrow(dda.finish))
+ddb.finish$metric <- rep("ddb",nrow(ddb.finish))
+
+names(dda.start)[names(dda.start) == 'mean.start.dda'] <- 'distance'
+names(ddb.start)[names(ddb.start) == 'mean.start.ddb'] <- 'distance'
+names(dda.finish)[names(dda.finish) == 'mean.finish.dda'] <- 'distance'
+names(ddb.finish)[names(ddb.finish) == 'mean.finish.ddb'] <- 'distance'
+
+dda.start <- within(dda.start, matching <- paste(playtype, metric, sep='_'))
+ddb.start <- within(ddb.start, matching <- paste(playtype, metric, sep='_'))
+dda.finish <- within(dda.finish, matching <- paste(playtype, metric, sep='_'))
+ddb.finish <- within(ddb.finish, matching <- paste(playtype, metric, sep='_'))
+
+football.ready <- rbind(dda.start,ddb.start)
+
+football.ready <- rbind(football.ready, dda.finish)
+football.ready <- rbind(football.ready, ddb.finish)
+
+x <- c(0,1,2,3,4,5,6,7)
+y <- c("Pass","Rush/Run","Kick/Punt/FG",
+                                "Incomplete","Sack","Penalty",
+                                "Interception","Touchdown")
+play.type.mapping <- data.frame(x,y)
+names(play.type.mapping) = c("playtype","Play.Type")
+
+
+football.ready <- merge(football.ready,play.type.mapping)
+
+
+football.ready$playtype <- ifelse(football.ready$metric=="dda",
+                                    football.ready$playtype + 0.15,
+                                    football.ready$playtype - 0.15)
+
+
+```
+
+
+
+```{r chart}
+
+ggplot(aes(x=playtype,y=distance,group=matching), data = football.ready) +
+  geom_point(aes(color = phase),
+             pch="|", size = 12) +
+  geom_line(aes(linetype=metric), 
+            size = 0.75) +
+  scale_color_manual(values=c("red", "green4")) +
+  scale_x_continuous(breaks=c(0,1,2,3,4,5,6,7), 
+                   labels=c("Pass","Rush/Run","Kick/Punt/FG",
+                                "Incomplete","Sack","Penalty",
+                                "Interception","Touchdown")) +
+  scale_y_continuous(breaks=c(20,30,40,50,60,70)) +
+  ggtitle("Changes in dda and ddb for Different Play Types") +
+  xlab("Play Type") + 
+  ylab("Average defensive distance in feet") +
+  theme(axis.text=element_text(size=20),
+        axis.title=element_text(size=22,face="bold"),
+        legend.title=element_blank(),
+        legend.text=element_text(size=18),
+        plot.title = element_text(size = 25),
+        legend.key.size = unit(1.5,"cm")
+        ) +
+  coord_flip()
+
+```
+
+
+
+### Definition
+
+* __Defense Distance from Average (dda)__ represents the average of each defender's 
+distance from the centroid (i.e. average location) of the defense.
+* __Defense Distance from Ball (ddb)__ represents the average of each defender's distance
+from the ball.
+
+#### About
+
+I created this during the ESPN Hackathon at the 2016 Sloan Sports Analytics Conference. 
+The goal was measure the stretch of a football defense. I applied two metrics, dda and ddb,
+to measure the defensive stretch in two different ways.
+The data source is player tracking data from the Under Armor high school all-star game.
+For R code used to calculate and visualize, you can visit http://github.com/dwolfATL/Sports-Analytics.
