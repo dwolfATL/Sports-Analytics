@@ -1,0 +1,461 @@
+---
+title: "New Method of NBA Player Classification"
+author: "[Daniel Wolf](daniel.wolf33@gmail.com)"
+date: "March 1st, 2016"
+output: html_document
+---
+
+## Introduction
+
+My goal in this project is to contribute to 
+advancing the scope and value of basketball analytics.
+
+The methodology below is adapted from _Basketball Analytics: Spatial
+Tracking_ by Stephen Shea. 
+As Stephen points out, conventional player positions (i.e. point guard, 
+center) are not well-suited for player comparison. Players listed at the 
+same position can have very different types. For example, consider Tony Allen vs
+Kyle Korver for shooting guards, or DeAndre Jordan vs Andrea Bargnani for
+centers.
+
+For this reason, there is a need for a new player classification structure that
+can compare players more precisely and effectively by grouping them
+based on role and/or skill set.
+
+
+```{r setup, include=FALSE}
+
+#knitr::opts_chunk$set(fig.width=30, fig.height=20, fig.path='Figs/',
+#                      echo=FALSE, warning=FALSE, message=FALSE)
+knitr::opts_chunk$set(fig.width=15, fig.height=10, fig.path='Figs/',
+                      echo=FALSE, warning=FALSE, message=FALSE)
+library(ggplot2)
+
+```
+
+
+```{r load_data}
+
+hoops <- read.csv('hoops.csv')
+hoops$Player.Name <- hoops$Player
+hoops <- data.frame(hoops, row.names="Player")
+
+# Remove players below certain thresholds
+mins_threshold = 15
+game_threshold = 10
+hoops <- subset(hoops, hoops[,"GP"]>=game_threshold & 
+                hoops[,"MIN"]>=mins_threshold)
+
+
+# Evaluate some basic attributes of the dataset
+#dim(hoops)
+#names(hoops)
+#str(hoops)
+#row.names(hoops)
+#head(hoops)
+#summary(hoops)
+
+```
+
+
+
+```{r new_field_creation}
+
+# Create new fields that will be used in the "filtration system"
+
+# Passes per Touch
+hoops$Passes.per.Touch <- with(hoops, Passes.Made.per.Game / Touches.per.Game)
+# Possessions Terminated
+hoops$PT <- with(hoops, FGA + AO + SecondAST + FTAst + 0.44*FTA)
+# Scoring Turnovers
+hoops$STOV <- with(hoops, ((FGA + 0.44*FTA) / PT) * TOV)
+# Playmaking Turnovers
+hoops$PTOV <- with(hoops, TOV - STOV)
+# Playmaking Possessions with TOV split
+hoops$PP <- with(hoops, AO + SecondAST + FTAst + PTOV)
+# Individual Playmaking Efficiency with TOV split
+hoops$IPE <- with(hoops, AST.PTS.Created / PP)
+# Close Shots
+hoops$Close.Shot.PTS <- with(hoops, Paint.Touch.PTS+Post.Touch.PTS+Elbow.Touch.PTS)
+# Percentage of points from Drives
+hoops$Dr <- with(hoops, Drive.PTS / PTS + 0.000001)
+# Percentage of points from Close Shots
+hoops$CS <- with(hoops, Close.Shot.PTS / PTS + 0.000001)
+# Percentage of points from Catch and Shoots
+hoops$Ca <- with(hoops, Catch.Shoot.PTS / PTS + 0.000001)
+# Percentage of points from Pull Ups
+hoops$PU <- with(hoops, Pull.Up.PTS / PTS + 0.000001)
+# Scoring Versatility Index
+hoops$SVI <- with(hoops, -Dr*log2(Dr) - CS*log2(CS) - Ca*log2(Ca) - PU*log2(PU))
+
+# Remove NA values
+hoops <- na.omit(hoops)
+#dim(hoops)
+
+# Function that will print top and bottom entries based on the chosen field
+top.bottom <- function(df, x){
+  df <- df[order(df[,x]),]
+  print(head(df[,x, drop=FALSE]))
+  df <- df[order(-df[,x]),]
+  print(head(df[,x, drop=FALSE]))
+}
+
+#top.bottom(hoops,"Passes.per.Touch")
+#top.bottom(hoops,"PT")
+#top.bottom(hoops,"STOV")
+#top.bottom(hoops,"PTOV")
+#top.bottom(hoops,"PP")
+#top.bottom(hoops,"IPE")
+#top.bottom(hoops,"Close.Shot.PTS")
+#top.bottom(hoops,"Dr")
+#top.bottom(hoops,"CS")
+#top.bottom(hoops,"Ca")
+#top.bottom(hoops,"PU")
+#top.bottom(hoops,"SVI")
+
+```
+
+
+```{r standardize}
+
+# Standardize by converting to per-minute numbers
+hoops$Passes.per.Touch <- hoops$Passes.per.Touch / hoops$MIN
+hoops$PP <- hoops$PP / hoops$MIN
+hoops$FGA3 <- hoops$FGA3 / hoops$MIN
+hoops$RAFGA <- hoops$RAFGA / hoops$MIN
+hoops$REB.Chances <- hoops$REB.Chances / hoops$MIN
+hoops$Opp.FGA.at.Rim <- hoops$Opp.FGA.at.Rim / hoops$MIN
+hoops$BLK <- hoops$BLK / hoops$MIN
+
+hoops$PTS <- hoops$PTS / hoops$MIN
+hoops$SVI <- hoops$SVI / hoops$MIN
+hoops$Opp.FGPer.at.Rim <- hoops$Opp.FGPer.at.Rim / hoops$MIN
+hoops$STL <- hoops$STL / hoops$MIN
+hoops$IPE <- hoops$IPE / hoops$MIN
+hoops$AST <- hoops$AST / hoops$MIN
+hoops$FGM3 <- hoops$FGM3 / hoops$MIN
+
+# Function that will standardize using the mean and standard deviation
+standardize <- function(df, x){
+  average <- mean(df[,x])
+  stdev <- sd(df[,x])
+  df[,x] <- (df[,x] - average) / stdev
+  return(df)
+}
+
+hoops <- standardize(hoops, "Passes.per.Touch")
+hoops <- standardize(hoops, "PP")
+hoops <- standardize(hoops, "FGA3")
+hoops <- standardize(hoops, "RAFGA")
+hoops <- standardize(hoops, "REB.Chances")
+hoops <- standardize(hoops, "Opp.FGA.at.Rim")
+hoops <- standardize(hoops, "BLK")
+hoops <- standardize(hoops, "PTS")
+hoops <- standardize(hoops, "SVI")
+hoops <- standardize(hoops, "Opp.FGPer.at.Rim")
+hoops <- standardize(hoops, "STL")
+hoops <- standardize(hoops, "IPE")
+hoops <- standardize(hoops, "AST")
+hoops <- standardize(hoops, "FGM3")
+
+#top.bottom(hoops, "Passes.per.Touch")
+#top.bottom(hoops, "PP")
+#top.bottom(hoops, "FGA3")
+#top.bottom(hoops, "RAFGA")
+#top.bottom(hoops, "REB.Chances")
+#top.bottom(hoops, "Opp.FGA.at.Rim")
+#top.bottom(hoops, "BLK")
+#top.bottom(hoops, "PTS")
+#top.bottom(hoops, "SVI")
+#top.bottom(hoops, "Opp.FGPer.at.Rim")
+#top.bottom(hoops, "STL")
+#top.bottom(hoops, "IPE")
+#top.bottom(hoops, "AST")
+#top.bottom(hoops, "FGM3")
+
+```
+
+
+```{r polar_conversion}
+
+# Convert to x,y coordinates for plotting
+
+# x coordinates
+hoops$x.Passes.per.Touch = hoops$Passes.per.Touch * cos(4*pi/4)
+hoops$x.PP = hoops$PP * cos(4*pi/4)
+hoops$x.FGA3 = hoops$FGA3 * cos(2*pi/4)
+hoops$x.RAFGA = hoops$RAFGA * cos(6*pi/4)
+hoops$x.REB.Chances = hoops$REB.Chances * cos(0*pi/4)
+hoops$x.Opp.FGA.at.Rim = hoops$Opp.FGA.at.Rim * cos(0*pi/4)
+
+hoops$x.BLK = hoops$BLK * cos(7*pi/4)
+hoops$x.PTS = hoops$PTS * cos(1*pi/4)
+hoops$x.SVI = hoops$SVI * cos(1*pi/4)
+hoops$x.Opp.FGPer.at.Rim = hoops$Opp.FGPer.at.Rim * cos(7*pi/4)
+hoops$x.STL = hoops$STL * cos(5*pi/4)
+hoops$x.IPE = hoops$IPE * cos(3*pi/4)
+hoops$x.AST = hoops$AST * cos(3*pi/4)
+hoops$x.FGM3 = hoops$FGM3 * cos(2*pi/4)
+
+# y coordinates
+hoops$y.Passes.per.Touch = hoops$Passes.per.Touch * sin(4*pi/4)
+hoops$y.PP = hoops$PP * sin(4*pi/4)
+hoops$y.FGA3 = hoops$FGA3 * sin(2*pi/4)
+hoops$y.RAFGA = hoops$RAFGA * sin(6*pi/4)
+hoops$y.REB.Chances = hoops$REB.Chances * sin(0*pi/4)
+hoops$y.Opp.FGA.at.Rim = hoops$Opp.FGA.at.Rim * sin(0*pi/4)
+
+hoops$y.BLK = hoops$BLK * sin(0*pi/4)
+hoops$y.PTS = hoops$PTS * sin(1*pi/4)
+hoops$y.SVI = hoops$SVI * sin(1*pi/4)
+hoops$y.Opp.FGPer.at.Rim = hoops$Opp.FGPer.at.Rim * sin(7*pi/4)
+hoops$y.STL = hoops$STL * sin(5*pi/4)
+hoops$y.IPE = hoops$IPE * sin(3*pi/4)
+hoops$y.AST = hoops$AST * sin(3*pi/4)
+hoops$y.FGM3 = hoops$FGM3 * sin(2*pi/4)
+
+hoops$x.coord <- with(hoops,(x.Passes.per.Touch + x.PP + x.FGA3 +
+                       x.RAFGA + x.REB.Chances +
+                       x.Opp.FGA.at.Rim + x.BLK +
+                       x.PTS + x.SVI + x.Opp.FGPer.at.Rim +
+                       x.STL + x.IPE + x.AST + x.FGM3) / 14 )
+hoops$y.coord <- with(hoops,(y.Passes.per.Touch + y.PP + y.FGA3 +
+                       y.RAFGA + y.REB.Chances +
+                       y.Opp.FGA.at.Rim + y.BLK +
+                       y.PTS + y.SVI + y.Opp.FGPer.at.Rim +
+                       y.STL + y.IPE + y.AST + y.FGM3) / 14 )
+
+
+```
+
+## Visual Classification
+
+Consider the chart below. The location of each player is determined by 
+his play, as measured by a select set of metrics (shown in 
+__<span style="color:blue">blue</span>__). 
+Each player is "pulled" toward the metrics that best define that
+player. For example, versatile scorers are pulled to the top-right 
+(see __Kevin Durant__, __Dirk Nowitzki__), 3-point specialists are pulled up 
+(see __JJ Redick__, __Steph Curry__), playmakers are pulled to the left 
+(see __Rajon Rondo__, __Chris Paul__), and defensive big men are pulled to the 
+bottom-right (see __DeAndre Jordan__, __Andre Drummond__).
+
+> __The key insight is that the closer a player is to any other player on 
+the chart, the more similar they are based on role and skill set.__
+
+
+```{r charts}
+
+ggplot(aes(x = x.coord, y = y.coord), data = hoops) +
+  geom_point(aes(x=x.coord, y = y.coord), alpha = 0) +
+  theme(axis.line=element_blank(),
+      axis.text.x=element_blank(),
+      axis.text.y=element_blank(),
+      axis.ticks=element_blank(),
+      axis.title.x=element_blank(),
+      axis.title.y=element_blank()) +
+  geom_text(aes(label=hoops$Player), size = 4) + 
+  annotate("text", x=.45, y=.45, label= "Points,\nScoring Versatility", 
+           size = 8, color = "blue")+
+  annotate("text", x=0, y=0.6, label= "3FGA,\n3FGM", 
+           size = 8, color = "blue")+
+  annotate("text", x=-.45, y=0.45, label= "Individual Playmaking Efficiency,\nAssists", 
+           size = 8, color = "blue")+
+  annotate("text", x=0.59, y=0.09, label= "Rebound\nChances,\nOpp. FGA at Rim", 
+           size = 8, color = "blue")+
+  annotate("text", x=-.6, y=0.09, label= "Passes per Touch,\nPlaymaking Poss.",
+           size = 8, color = "blue")+
+  annotate("text", x=-.4, y=-.4, label= "Steals", 
+           size = 8, color = "blue")+
+  annotate("text", x=0, y=-.6, label= "Restricted Area FGA", 
+           size = 8, color = "blue")+
+  annotate("text", x=0.59, y=-.5, label= "Blocks,\nOpp. FG% at Rim", 
+           size = 8, color = "blue")
+
+
+```
+
+## Value Add
+
+In this way, very precise player classifications can be 
+defined given that players next to each other are similar.
+Here are three potential ways this approach could add value:
+
+1. Support the "eye test" with data. Scouts and front offices consistently 
+evaluate a player by referencing "similar" players to get a better 
+understanding of how a player might fit in a system or a role.
+2. Once a team need is identified, use this method to find players that 
+fit that type and skill set. Also, if
+a target player has been identified, quickly identify other alternatives.
+3. Taking this analysis one step further could be used to determine an 
+optimal combination of player types to create a winning team.
+
+
+
+## Metrics
+
+Some of these metrics characterize a player's role, while 
+others describe a player's skill within that role. 
+The set of metrics used in this exercise can easily be adjusted depending 
+on the intended use. All metrics 
+were converted to __per-minute__ and __normalized__ in order to more
+effectively compare player ability while they are on the floor. Players 
+with less than 10 GP and 15 MPG in the 2015-2016 season have been removed.
+There are a total of __292 players__ included in this analysis.
+
+__Opportunity Metrics: Identify the player's ROLE (e.g. big or small)__
+
+* 3-point Field Goals Attempted
+* Restricted Area Field Goals Attempted
+* Rebounding Chances
+* Opponent Field Goal Attempts at Rim
+* Passes per Touch
+* Playmaking Possessions (how many opportunities does a player have to put 
+other players in a position to score)
+
+__Performance Metrics: Identify the player's SKILL SET__
+
+* Points
+* Steals
+* Assists
+* Blocks
+* 3-point Field Goals Made
+* Opponent Field Goal Percentage at Rim
+* Individual Playmaking Efficiency (how efficiently can the player
+put other players in a position to score)
+* Scoring Versatility Index (how evenly distributed is scoring between pull-ups,
+close shots, drives, and catch and shoot)
+
+All of the metrics needed for this report either come directly
+from NBA.com or are calculated using statistics from NBA.com.
+
+
+```{r closest_players}
+
+# This function will find the closest players for any player based on the metrics
+closest.players <- function(df, player){
+  
+  # Pull out the player names and x,y coordinates to a new data frame
+  xy = data.frame(Player.Name = df$Player.Name, 
+                  x.coord = df$x.coord, 
+                  y.coord = df$y.coord)
+  
+  # Replicate the rows in order to prep for calculations
+  xy.rep.1 <- xy[rep(row.names(xy), nrow(xy)),]
+  xy.rep.2 <- xy.rep.1[order(xy.rep.1[,"Player.Name"]),]
+  
+  # Rename the columns that will be compared to
+  names(xy.rep.1)[names(xy.rep.1) == 'Player.Name'] <- 'Player.comp'
+  names(xy.rep.1)[names(xy.rep.1) == 'x.coord'] <- 'x.comp'
+  names(xy.rep.1)[names(xy.rep.1) == 'y.coord'] <- 'y.comp'
+  
+  # Combine the two dataframes together for comparison
+  closest <- cbind(xy.rep.2, xy.rep.1)
+  
+  # Calculate the distance between the two points
+  closest$distance <- with(closest, sqrt((x.coord-x.comp)^2 + (y.coord-y.comp)^2))
+  
+  # Sort low to high in terms of Player and Distance
+  closest <- closest[order(closest[,"Player.Name"],closest[,"distance"]),]
+  
+  # Subset to only output the player of interest
+  closest = subset(closest, Player.Name == player)
+  
+  # Print the results
+  print(head(closest[,"Player.comp",drop=FALSE],8))
+  
+}
+
+
+# Enter a player name to find the closest players
+#closest.players(hoops, "Dennis Schroder")
+#closest.players(hoops, "Thabo Sefolosha")
+#closest.players(hoops, "Kent Bazemore")
+#closest.players(hoops, "Jeff Teague")
+#closest.players(hoops, "Kyle Korver")
+#closest.players(hoops, "Paul Millsap")
+#closest.players(hoops, "Al Horford")
+#closest.players(hoops, "Mike Scott")
+#closest.players(hoops, "Kirk Hinrich")
+#closest.players(hoops, "Kris Humphries")
+#closest.players(hoops, "Tim Hardaway Jr.")
+#closest.players(hoops, "Tiago Splitter")
+
+```
+
+
+```{r output}
+
+#dim(hoops)
+write.csv(hoops, "hoops_out.csv")
+
+```
+
+## Focus On: Hawks
+
+
+Players closest to Jeff Teague:
+
+* Ty Lawson
+* Tyreke Evans
+* Mario Chalmers
+
+Players closest to Kent Bazemore:
+
+* Dante Cunningham
+* James Johnson
+* Matt Barnes
+
+Players closest to Kyle Korver:
+
+* PJ Hairston
+* Anthony Tolliver
+* Wesley Matthews
+
+Players closest to Paul Millsap:
+
+* Jerami Grant
+* Terrence Jones
+* Jared Sullinger
+
+Players closest to Al Horford:
+
+* Shabazz Muhammad
+* Jon Leuer
+* Ersan Ilyasova
+
+Players closest to Dennis Schroder:
+
+* Toney Douglas
+* Jameer Nelson
+* Steve Blake
+
+Players closest to Thabo Sefolosha:
+
+* PJ Tucker
+* Tayshaun Prince
+* Andre Roberson
+
+Players closest to Tim Hardaway Jr.:
+
+* Isaiah Thomas
+* Manu Ginobili
+* Jerryd Bayless
+
+Players closest to Tiago Splitter:
+
+* Tony Allen (interesting)
+* Trevor Booker
+* Rondae Hollis-Jefferson 
+* Larry Nance Jr.
+
+Players closest to Kris Humphries:
+
+* Andrew Nicholson
+* Ersan Ilyasova
+* Kristaps Porzingis
+
+
+For more information or to discuss these topics in more depth, 
+feel free to reach out to Daniel Wolf at daniel.wolf33@gmail.com. This 
+project was completed using R programming.
